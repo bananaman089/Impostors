@@ -1,0 +1,73 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+body {
+  background-color: #000;
+  color: #fff;
+  font-family: 'Inter', sans-serif;
+  overflow-x: hidden;
+}
+
+.stars {
+  background: transparent url('https://www.transparenttextures.com/patterns/stardust.png') repeat top center;
+  z-index: -1;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  animation: move-twink-back 200s linear infinite;
+}
+
+@keyframes move-twink-back {
+    from {background-position: 0 0;}
+    to {background-position: -10000px 5000px;}
+}
+
+.among-us-panel {
+  background: #c5d3db;
+  border: 8px solid #4a5568;
+  border-radius: 24px;
+  box-shadow: inset 0 0 20px rgba(0,0,0,0.2), 0 10px 30px rgba(0,0,0,0.5);
+  color: #1a202c;
+}
+
+.among-us-button {
+  border: 4px solid #4a5568;
+  border-bottom-width: 8px;
+  border-radius: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+  transition: all 0.1s;
+}
+
+.among-us-button:active {
+  border-bottom-width: 4px;
+  transform: translateY(4px);
+}
+
+.among-us-input {
+  background: #fff;
+  border: 4px solid #4a5568;
+  border-radius: 8px;
+  font-weight: bold;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 8px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: rgba(0,0,0,0.2);
+  border-radius: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #4a5568;
+  border-radius: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #718096;
+}
