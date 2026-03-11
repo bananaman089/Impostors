@@ -71,3 +71,37 @@ body {
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
   background: #718096;
 }
+
+/* Range sliders: thumb same height as track so black sits exactly on the gray line */
+input[type="range"] {
+  accent-color: #1a202c;
+  height: 10px;
+}
+input[type="range"]::-webkit-slider-runnable-track {
+  background: #9ca3af;
+  height: 10px;
+  border-radius: 5px;
+}
+input[type="range"]::-moz-range-track {
+  background: #9ca3af;
+  height: 10px;
+  border-radius: 5px;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 10px;
+  background: #1a202c;
+  border-radius: 3px;
+  cursor: pointer;
+  margin-top: 0;
+}
+input[type="range"]::-moz-range-thumb {
+  width: 14px;
+  height: 10px;
+  background: #1a202c;
+  border-radius: 3px;
+  cursor: pointer;
+  border: none;
+}

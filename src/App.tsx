@@ -13,13 +13,34 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  // Restore guest session from localStorage on first load
+  useEffect(() => {
+    (async () => {
+      try {
+        const restored = await api.restoreSession();
+        if (!restored) return;
+        // If last known state was GAME_OVER or LOBBY, go back to name-entry screen on refresh (so anyone can "refresh to change name")
+        if (restored.room.state === 'GAME_OVER' || restored.room.state === 'LOBBY') {
+          api.clearSession();
+          setRoom(null);
+          setUser(null);
+        } else {
+          setRoom(restored.room);
+          setUser(restored.user);
+        }
+      } catch {
+        // ignore restore errors
+      }
+    })();
+  }, []);
+
   // Polling for room updates
   useEffect(() => {
     if (!room) return;
     const interval = setInterval(async () => {
       const updatedRoom = await api.pollRoom();
       if (updatedRoom) setRoom(updatedRoom);
-    }, 2000);
+    }, 1500);
     return () => clearInterval(interval);
   }, [room?.id]);
 
@@ -37,8 +58,9 @@ export default function App() {
   const handleHost = async (settings: RoomSettings) => {
     setLoading(true);
     try {
-      const r = await api.hostRoom(settings);
+      const { room: r, player } = await api.hostRoom(settings);
       setRoom(r);
+      if (player) setUser(player);
     } catch (e: any) {
       setError(e.message);
     }
@@ -48,8 +70,9 @@ export default function App() {
   const handleJoin = async (code: string) => {
     setLoading(true);
     try {
-      const r = await api.joinRoom(code);
+      const { room: r, player } = await api.joinRoom(code);
       setRoom(r);
+      if (player) setUser(player);
     } catch (e: any) {
       setError(e.message);
     }
@@ -248,6 +271,8 @@ const GameScreen: React.FC<GameScreenProps> = ({ user, room, setRoom }) => {
   const [votedId, setVotedId] = useState<string | null>(null);
   const [chatText, setChatText] = useState('');
   const chatEndRef = React.useRef<HTMLDivElement>(null);
+  const prevStateRef = React.useRef<string>(room.state);
+  const [showVoteReveal, setShowVoteReveal] = useState(false);
   const [localTimeLeft, setLocalTimeLeft] = useState<number | null>(null);
 
   useEffect(() => {
@@ -268,22 +293,34 @@ const GameScreen: React.FC<GameScreenProps> = ({ user, room, setRoom }) => {
 
   // Reset local state when round changes
   useEffect(() => {
+    const prevState = prevStateRef.current;
     if (room.state === 'THEME_SELECTION' || room.state === 'LOBBY') {
       setWord('');
       setAssociation('');
       setSubmitted(false);
       setVotedId(null);
     }
-    if (room.state === 'ASSOCIATION') {
+    // Entering WORD_SELECTION (new round): clear secret word field
+    if (prevState !== 'WORD_SELECTION' && room.state === 'WORD_SELECTION') {
+      setWord('');
+    }
+    // Entering ASSOCIATION (new round): clear association/guess field so it's not prefilled
+    if (prevState !== 'ASSOCIATION' && room.state === 'ASSOCIATION') {
+      setAssociation('');
       setSubmitted(false);
     }
+
+    // When voting ends (VOTING -> RESULT/GAME_OVER), briefly show vote markers like Among Us
+    if (prevState === 'VOTING' && (room.state === 'RESULT' || room.state === 'GAME_OVER')) {
+      setShowVoteReveal(true);
+      const t = setTimeout(() => setShowVoteReveal(false), 4000);
+      return () => clearTimeout(t);
+    }
+
+    prevStateRef.current = room.state;
   }, [room.state, room.id]);
 
-  useEffect(() => {
-    if (room.state === 'VOTING') {
-      chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }
-  }, [room.chat, room.state]);
+  // Don't auto-scroll chat on every update – lets user scroll up/down freely on mobile
 
   const handleFillBots = async () => {
     const r = await api.fillWithBots();
@@ -351,7 +388,19 @@ const GameScreen: React.FC<GameScreenProps> = ({ user, room, setRoom }) => {
   if (room.state === 'THEME_SELECTION') {
     const isPicker = room.themePickerId === user.id;
     const picker = room.players.find(p => p.id === room.themePickerId);
-    
+    const isDead = !room.players.find(p => p.id === user.id)?.isAlive;
+
+    if (isDead) {
+      return (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="w-full max-w-xl">
+          <AmongUsPanel className="text-center">
+            <h2 className="text-3xl font-black mb-4">SPECTATING</h2>
+            <p className="text-xl font-bold text-gray-400">You're out. Waiting for the voting to start so you can watch...</p>
+          </AmongUsPanel>
+        </motion.div>
+      );
+    }
+
     return (
       <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="w-full max-w-xl">
         <AmongUsPanel className="text-center">
@@ -363,7 +412,7 @@ const GameScreen: React.FC<GameScreenProps> = ({ user, room, setRoom }) => {
               <p className="mb-4">Choose a theme for this round:</p>
               <div className="grid grid-cols-2 gap-4">
                 {['Animals', 'Technology', 'Food', 'Movies', 'Sports', 'Geography'].map(t => (
-                  <AmongUsButton key={t} variant="primary" onClick={async () => {
+                  <AmongUsButton key={t} variant="primary" className="text-sm sm:text-base md:text-lg min-w-0 break-words" onClick={async () => {
                     const r = await api.selectTheme(t);
                     setRoom(r);
                   }}>
@@ -387,14 +436,26 @@ const GameScreen: React.FC<GameScreenProps> = ({ user, room, setRoom }) => {
 
   if (room.state === 'WORD_SELECTION') {
     const isPicker = room.themePickerId === user.id;
-    
+    const isDead = !room.players.find(p => p.id === user.id)?.isAlive;
+
+    if (isDead) {
+      return (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="w-full max-w-xl">
+          <AmongUsPanel className="text-center">
+            <h2 className="text-3xl font-black mb-4">SPECTATING</h2>
+            <p className="text-xl font-bold text-gray-400">You're out. Waiting for the voting to start so you can watch...</p>
+          </AmongUsPanel>
+        </motion.div>
+      );
+    }
+
     return (
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="w-full max-w-xl">
         <AmongUsPanel className="text-center">
           <h2 className="text-3xl font-black mb-4">WORD SELECTION</h2>
-          <div className="bg-blue-100 border-4 border-blue-400 rounded-xl p-4 mb-8 inline-block">
+          <div className="bg-blue-100 border-4 border-blue-400 rounded-xl p-4 mb-8 inline-block max-w-full min-w-0 overflow-hidden">
             <span className="text-blue-800 font-bold">THEME:</span>
-            <span className="text-2xl font-black ml-2 text-blue-900">{room.theme}</span>
+            <span className="text-lg sm:text-xl md:text-2xl font-black ml-2 text-blue-900 break-words">{room.theme}</span>
           </div>
           
           {isPicker ? (
@@ -425,10 +486,22 @@ const GameScreen: React.FC<GameScreenProps> = ({ user, room, setRoom }) => {
   if (room.state === 'ASSOCIATION') {
     const isImpostor = room.impostorIds.includes(user.id);
     const isPicker = room.themePickerId === user.id;
+    const isDead = !room.players.find(p => p.id === user.id)?.isAlive;
     
     // Calculate hint for impostors
     const word = room.word || '';
     const hint = isImpostor ? `${word.charAt(0)}...${word.charAt(word.length - 1)} (${word.length} letters)` : word;
+
+    if (isDead) {
+      return (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="w-full max-w-xl">
+          <AmongUsPanel className="text-center">
+            <h2 className="text-3xl font-black mb-4">SPECTATING</h2>
+            <p className="text-xl font-bold text-gray-400">You're out. Waiting for the voting to start so you can watch...</p>
+          </AmongUsPanel>
+        </motion.div>
+      );
+    }
 
     if (isPicker) {
       return (
@@ -437,8 +510,8 @@ const GameScreen: React.FC<GameScreenProps> = ({ user, room, setRoom }) => {
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-3xl font-black">WAITING FOR PLAYERS</h2>
               {localTimeLeft !== null && (
-                <div className={`text-2xl font-black px-4 py-1 rounded-lg border-4 ${localTimeLeft < 10 ? 'bg-red-100 border-red-500 text-red-600 animate-pulse' : 'bg-gray-100 border-gray-400 text-gray-700'}`}>
-                  {localTimeLeft}s
+                <div className={`text-2xl font-black px-4 py-1 rounded-lg border-4 min-w-[3.5rem] text-center tabular-nums overflow-hidden ${localTimeLeft < 10 ? 'bg-red-100 border-red-500 text-red-600 animate-pulse' : 'bg-gray-100 border-gray-400 text-gray-700'}`}>
+                  <span className="inline-block min-w-[2.5ch]">{localTimeLeft}s</span>
                 </div>
               )}
             </div>
@@ -456,8 +529,8 @@ const GameScreen: React.FC<GameScreenProps> = ({ user, room, setRoom }) => {
           <div className="flex justify-between items-center mb-2">
             <h2 className="text-3xl font-black">ASSOCIATION PHASE</h2>
             {localTimeLeft !== null && (
-              <div className={`text-2xl font-black px-4 py-1 rounded-lg border-4 ${localTimeLeft < 10 ? 'bg-red-100 border-red-500 text-red-600 animate-pulse' : 'bg-gray-100 border-gray-400 text-gray-700'}`}>
-                {localTimeLeft}s
+              <div className={`text-2xl font-black px-4 py-1 rounded-lg border-4 min-w-[3.5rem] text-center tabular-nums overflow-hidden ${localTimeLeft < 10 ? 'bg-red-100 border-red-500 text-red-600 animate-pulse' : 'bg-gray-100 border-gray-400 text-gray-700'}`}>
+                <span className="inline-block min-w-[2.5ch]">{localTimeLeft}s</span>
               </div>
             )}
           </div>
@@ -468,9 +541,9 @@ const GameScreen: React.FC<GameScreenProps> = ({ user, room, setRoom }) => {
             </div>
           )}
           
-          <div className="bg-gray-200 border-4 border-gray-400 rounded-xl p-6 mb-8">
+          <div className="bg-gray-200 border-4 border-gray-400 rounded-xl p-6 mb-8 min-w-0 overflow-hidden">
             <div className="mb-2 text-sm font-bold text-gray-500 uppercase">Theme</div>
-            <div className="text-2xl font-black mb-4 text-gray-900">{room.theme}</div>
+            <div className="text-lg sm:text-xl md:text-2xl font-black mb-4 text-gray-900 break-words min-w-0">{room.theme}</div>
             
             <div className="mb-2 text-sm font-bold text-gray-500 uppercase">The Word</div>
             <div className={`text-4xl font-black ${isImpostor ? 'text-red-600' : 'text-green-600'} tracking-widest`}>
@@ -504,6 +577,101 @@ const GameScreen: React.FC<GameScreenProps> = ({ user, room, setRoom }) => {
     );
   }
 
+  // Short reveal phase: show voting tablet with vote dots after voting ends, before result screen
+  if (showVoteReveal) {
+    // Show vote results for all players (including you, even if dead)
+    const playersForReveal = room.players;
+    const isImpostor = room.impostorIds.includes(user.id);
+    const displayWord = isImpostor && room.word 
+      ? `${room.word.charAt(0)}...${room.word.charAt(room.word.length - 1)} (${room.word.length} letters)` 
+      : room.word;
+
+    return (
+      <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="w-full max-w-6xl">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-2 bg-gray-800 border-8 border-gray-600 rounded-3xl p-4 shadow-2xl flex flex-col h-[80vh]">
+            <div className="bg-blue-900 border-4 border-blue-700 rounded-xl p-4 mb-4 text-center shadow-inner relative overflow-hidden shrink-0">
+              <div className="absolute inset-0 bg-blue-400 opacity-10" style={{ backgroundImage: 'repeating-linear-gradient(0deg, transparent, transparent 2px, #000 2px, #000 4px)' }}></div>
+              <div className="flex justify-between items-center relative z-10">
+                <div className="w-16"></div>
+                <h2 className="text-2xl md:text-3xl font-black text-white tracking-widest">VOTE RESULTS</h2>
+                <div className="w-16" />
+              </div>
+              <p className="text-blue-200 font-bold relative z-10 mt-1 text-sm sm:text-base min-w-0 truncate">Theme: {room.theme} | Word: {displayWord}</p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3 overflow-y-auto flex-1 min-h-0 pr-2 custom-scrollbar">
+              {playersForReveal.map(p => {
+                const isMe = p.id === user.id;
+                const isPicker = p.id === room.themePickerId;
+                const association = room.associations[p.id];
+                const voteCount = Object.values(room.votes || {}).filter(v => v === p.id).length;
+
+                return (
+                  <div 
+                    key={p.id}
+                    className={`
+                      flex items-center p-3 rounded-xl border-4 bg-gray-800 border-gray-600 opacity-90
+                    `}
+                  >
+                    <div className="w-10 h-14 rounded-t-full rounded-b-md border-2 border-black relative mr-4 shrink-0" style={{ backgroundColor: p.color }}>
+                      <div className="absolute top-2 left-1 right-1 h-4 bg-blue-200 rounded-full border border-black opacity-80"></div>
+                    </div>
+                    
+                    <div className="flex-1 min-w-0">
+                      <div className="font-bold text-white truncate flex items-center">
+                        {p.name} {isMe && <span className="ml-2 text-xs bg-blue-600 px-2 py-1 rounded">YOU</span>}
+                        {isPicker && <span className="ml-2 text-xs bg-yellow-600 px-2 py-1 rounded">PICKER</span>}
+                      </div>
+                      {isPicker ? (
+                        <div className="text-yellow-400 font-mono text-sm mt-1 truncate">Picked the word</div>
+                      ) : (
+                        <div className="text-green-400 font-mono text-lg mt-1 truncate bg-black/30 px-2 py-1 rounded">
+                          {association ? `"${association}"` : '""'}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex items-center justify-end w-20 shrink-0">
+                      {voteCount > 0 && (
+                        <div className="flex items-center gap-1">
+                          {Array.from({ length: voteCount }).map((_, i) => (
+                            <div key={i} className="w-3 h-3 bg-red-500 rounded-full border border-black" />
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="flex justify-center items-center bg-gray-700 p-4 rounded-xl border-4 border-gray-600 shrink-0">
+              <div className="text-gray-300 font-bold text-sm md:text-base">
+                Showing votes... next screen will reveal who was ejected.
+              </div>
+            </div>
+          </div>
+
+          {/* Right column: only discussion panel */}
+          <div className="flex bg-gray-800 border-8 border-gray-600 rounded-3xl p-4 shadow-2xl flex-col h-[80vh]">
+            <div className="bg-gray-900 rounded-xl p-3 mb-4 text-center border-2 border-gray-700 shrink-0">
+              <h3 className="text-xl font-black text-white tracking-widest">DISCUSSION</h3>
+            </div>
+            <div className="flex-1 overflow-y-auto mb-4 space-y-3 pr-2 custom-scrollbar">
+              {room.chat?.map(msg => (
+                <div key={msg.id} className="bg-gray-700 rounded-lg p-3 border-l-4" style={{ borderLeftColor: msg.senderColor }}>
+                  <div className="font-bold text-sm mb-1" style={{ color: msg.senderColor }}>{msg.senderName}</div>
+                  <div className="text-white text-sm break-words">{msg.text}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </motion.div>
+    );
+  }
+
   if (room.state === 'VOTING') {
     const alivePlayers = room.players.filter(p => p.isAlive);
     const hasVoted = !!room.votes[user.id];
@@ -526,12 +694,12 @@ const GameScreen: React.FC<GameScreenProps> = ({ user, room, setRoom }) => {
                 <div className="w-16"></div> {/* Spacer */}
                 <h2 className="text-2xl md:text-3xl font-black text-white tracking-widest">WHO IS THE IMPOSTOR?</h2>
                 {localTimeLeft !== null ? (
-                  <div className={`text-xl font-black px-3 py-1 rounded-lg border-4 ${localTimeLeft < 10 ? 'bg-red-100 border-red-500 text-red-600 animate-pulse' : 'bg-gray-100 border-gray-400 text-gray-700'}`}>
-                    {localTimeLeft}s
+                  <div className={`text-xl font-black px-3 py-1 rounded-lg border-4 min-w-[3rem] text-center tabular-nums overflow-hidden ${localTimeLeft < 10 ? 'bg-red-100 border-red-500 text-red-600 animate-pulse' : 'bg-gray-100 border-gray-400 text-gray-700'}`}>
+                    <span className="inline-block min-w-[2.5ch]">{localTimeLeft}s</span>
                   </div>
                 ) : <div className="w-16"></div>}
               </div>
-              <p className="text-blue-200 font-bold relative z-10 mt-1">Theme: {room.theme} | Word: {displayWord}</p>
+              <p className="text-blue-200 font-bold relative z-10 mt-1 text-sm sm:text-base min-w-0 truncate">Theme: {room.theme} | Word: {displayWord}</p>
             </div>
             
             {/* Players Grid */}
@@ -564,15 +732,16 @@ const GameScreen: React.FC<GameScreenProps> = ({ user, room, setRoom }) => {
                       {isPicker ? (
                         <div className="text-yellow-400 font-mono text-sm mt-1 truncate">Picked the word</div>
                       ) : (
-                        <div className="text-green-400 font-mono text-lg mt-1 truncate bg-black/30 px-2 py-1 rounded">"{association}"</div>
+                        <div className="text-green-400 font-mono text-lg mt-1 truncate bg-black/30 px-2 py-1 rounded">
+                          {association ? `"${association}"` : '""'}
+                        </div>
                       )}
                     </div>
                     
-                    {/* Vote indicator */}
-                    <div className="flex flex-wrap w-8 justify-end">
-                      {Object.values(room.votes).filter(v => v === p.id).map((_, i) => (
-                        <div key={i} className="w-3 h-3 bg-red-500 rounded-full border border-black ml-1 mb-1"></div>
-                      ))}
+                    <div className="flex items-center justify-end w-20 shrink-0">
+                      {Object.keys(room.votes).includes(p.id) && (
+                        <span className="text-xs font-bold text-green-400 bg-gray-700 px-2 py-0.5 rounded">Voted</span>
+                      )}
                     </div>
                   </div>
                 );
@@ -580,13 +749,15 @@ const GameScreen: React.FC<GameScreenProps> = ({ user, room, setRoom }) => {
             </div>
             
             {/* Actions */}
-            <div className="flex justify-between items-center bg-gray-700 p-4 rounded-xl border-4 border-gray-600 shrink-0">
-              <div className="text-gray-300 font-bold">
+            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 bg-gray-700 p-4 rounded-xl border-4 border-gray-600 shrink-0">
+              <div className="text-gray-300 font-bold text-center sm:text-left order-2 sm:order-1 min-w-0">
                 {isDead ? 'You are dead.' : hasVoted ? 'Waiting for others...' : 'Select a player to vote'}
               </div>
               <AmongUsButton 
                 variant="danger" 
                 disabled={!votedId || hasVoted || isDead}
+                className="min-w-[8rem] whitespace-nowrap px-4 flex-shrink-0 order-1 sm:order-2 self-center sm:self-auto"
+                style={{ wordSpacing: '0.15em' }}
                 onClick={async () => {
                   if (votedId && !isDead) {
                     const r = await api.submitVote(votedId);
@@ -615,32 +786,34 @@ const GameScreen: React.FC<GameScreenProps> = ({ user, room, setRoom }) => {
               <div ref={chatEndRef} />
             </div>
             
-            <div className="flex gap-2 shrink-0">
-              <AmongUsInput 
-                value={chatText}
-                onChange={e => setChatText(e.target.value)}
-                placeholder="Discuss..."
-                className="text-sm py-2"
-                onKeyDown={e => {
-                  if (e.key === 'Enter' && chatText.trim()) {
-                    api.sendChatMessage(chatText.trim());
-                    setChatText('');
-                  }
-                }}
-              />
-              <AmongUsButton 
-                variant="primary" 
-                className="px-4 py-2 text-sm"
-                onClick={() => {
-                  if (chatText.trim()) {
-                    api.sendChatMessage(chatText.trim());
-                    setChatText('');
-                  }
-                }}
-              >
-                SEND
-              </AmongUsButton>
-            </div>
+            {!isDead && (
+              <div className="flex gap-2 shrink-0">
+                <AmongUsInput 
+                  value={chatText}
+                  onChange={e => setChatText(e.target.value)}
+                  placeholder="Discuss..."
+                  className="text-sm py-2"
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' && chatText.trim()) {
+                      api.sendChatMessage(chatText.trim());
+                      setChatText('');
+                    }
+                  }}
+                />
+                <AmongUsButton 
+                  variant="primary" 
+                  className="px-4 py-2 text-sm"
+                  onClick={() => {
+                    if (chatText.trim()) {
+                      api.sendChatMessage(chatText.trim());
+                      setChatText('');
+                    }
+                  }}
+                >
+                  SEND
+                </AmongUsButton>
+              </div>
+            )}
           </div>
 
         </div>
@@ -651,7 +824,7 @@ const GameScreen: React.FC<GameScreenProps> = ({ user, room, setRoom }) => {
   if (room.state === 'RESULT' || room.state === 'GAME_OVER') {
     const ejected = room.players.find(p => p.id === room.ejectedPlayerId);
     const wasImpostor = ejected ? room.impostorIds.includes(ejected.id) : false;
-    
+
     return (
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="w-full max-w-2xl text-center">
         <div className="mb-12">
