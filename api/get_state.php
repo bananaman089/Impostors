@@ -280,27 +280,19 @@ try {
             $pdo->prepare("UPDATE rooms SET status = 'RESULT', ejected_player_id = ? WHERE id = ?")->execute([$ejectedId, $room['id']]);
             $room['status'] = 'RESULT';
             $room['ejected_player_id'] = $ejectedId;
-            // Do NOT clear chat here: keep discussion visible during vote-results screen; clear when next round starts
-            if ($ejectedId) {
-                $pdo->prepare("UPDATE players SET is_alive = 0 WHERE id = ?")->execute([$ejectedId]);
-                foreach ($playersRows as $i => $p) {
-                    if ($p['id'] === $ejectedId) {
-                        $playersRows[$i]['is_alive'] = '0';
-                        break;
-                    }
-                }
-            }
+            // Do NOT set is_alive = 0 here: keep ejected player "alive" in data so they stay visible on Vote results screen with their votes; set is_alive = 0 in submit_action when leaving RESULT (next_round)
             $impostorIds = [];
             foreach ($playersRows as $p) {
                 if ($p['role'] === 'impostor') {
                     $impostorIds[] = $p['id'];
                 }
             }
+            // For winner: treat ejected as dead (we don't set is_alive = 0 in DB until next_round)
             $aliveImpostors = array_filter($playersRows, function ($p) use ($ejectedId, $impostorIds) {
-                return (int) $p['is_alive'] === 1 && in_array($p['id'], $impostorIds);
+                return $p['id'] !== $ejectedId && (int) $p['is_alive'] === 1 && in_array($p['id'], $impostorIds);
             });
-            $aliveCrewmates = array_filter($playersRows, function ($p) use ($impostorIds) {
-                return (int) $p['is_alive'] === 1 && !in_array($p['id'], $impostorIds);
+            $aliveCrewmates = array_filter($playersRows, function ($p) use ($ejectedId, $impostorIds) {
+                return $p['id'] !== $ejectedId && (int) $p['is_alive'] === 1 && !in_array($p['id'], $impostorIds);
             });
             $winner = null;
             if (count($aliveImpostors) === 0) {
@@ -336,7 +328,11 @@ try {
     $isImpostor = ($requestingPlayer['role'] === 'impostor');
     $currentWord = $room['current_word'];
     if ($isImpostor && $currentWord !== null && $currentWord !== '') {
-        $currentWord = null;
+        $len = strlen($currentWord);
+        $first = substr($currentWord, 0, 1);
+        $last = substr($currentWord, -1, 1);
+        $middle = $len >= 10 ? substr($currentWord, (int)floor($len / 2), 1) . '...' : '';
+        $currentWord = $first . '...' . $middle . $last . ' (' . $len . ' letters)';
     }
 
     $settings = json_decode($room['settings'], true);

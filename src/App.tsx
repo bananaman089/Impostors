@@ -309,6 +309,10 @@ const GameScreen: React.FC<GameScreenProps> = ({ user, room, setRoom }) => {
       setAssociation('');
       setSubmitted(false);
     }
+    // Entering VOTING for a new round: no card should be pre-selected
+    if (prevState !== 'VOTING' && room.state === 'VOTING') {
+      setVotedId(null);
+    }
 
     // When voting ends (VOTING -> RESULT/GAME_OVER), briefly show vote markers like Among Us
     if (prevState === 'VOTING' && (room.state === 'RESULT' || room.state === 'GAME_OVER')) {
@@ -466,6 +470,12 @@ const GameScreen: React.FC<GameScreenProps> = ({ user, room, setRoom }) => {
                 onChange={e => setWord(e.target.value)} 
                 placeholder="Secret Word"
                 className="mb-4 text-center text-2xl"
+                onKeyDown={async e => {
+                  if (e.key === 'Enter' && word.length >= 2) {
+                    const r = await api.selectWord(word);
+                    setRoom(r);
+                  }
+                }}
               />
               <AmongUsButton variant="success" className="w-full" onClick={async () => {
                 if (word.length < 2) return;
@@ -488,9 +498,8 @@ const GameScreen: React.FC<GameScreenProps> = ({ user, room, setRoom }) => {
     const isPicker = room.themePickerId === user.id;
     const isDead = !room.players.find(p => p.id === user.id)?.isAlive;
     
-    // Calculate hint for impostors
-    const word = room.word || '';
-    const hint = isImpostor ? `${word.charAt(0)}...${word.charAt(word.length - 1)} (${word.length} letters)` : word;
+    // Backend sends word hint for impostor (first/last/middle if len>=10), full word for crew
+    const hint = room.word ?? '';
 
     if (isDead) {
       return (
@@ -559,6 +568,13 @@ const GameScreen: React.FC<GameScreenProps> = ({ user, room, setRoom }) => {
                 onChange={e => setAssociation(e.target.value)} 
                 placeholder="Your association..."
                 className="mb-4 text-center text-xl"
+                onKeyDown={async e => {
+                  if (e.key === 'Enter' && association) {
+                    setSubmitted(true);
+                    const r = await api.submitAssociation(association);
+                    setRoom(r);
+                  }
+                }}
               />
               <AmongUsButton variant="primary" className="w-full" onClick={async () => {
                 if (!association) return;
@@ -579,12 +595,10 @@ const GameScreen: React.FC<GameScreenProps> = ({ user, room, setRoom }) => {
 
   // Short reveal phase: show voting tablet with vote dots after voting ends, before result screen
   if (showVoteReveal) {
-    // Show vote results for all players (including you, even if dead)
-    const playersForReveal = room.players;
+    // Show only players who were alive this round: includes the newly ejected player, but hides old spectators
+    const playersForReveal = room.players.filter(p => p.isAlive);
     const isImpostor = room.impostorIds.includes(user.id);
-    const displayWord = isImpostor && room.word 
-      ? `${room.word.charAt(0)}...${room.word.charAt(room.word.length - 1)} (${room.word.length} letters)` 
-      : room.word;
+    const displayWord = room.word ?? '';
 
     return (
       <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="w-full max-w-6xl">
@@ -600,7 +614,8 @@ const GameScreen: React.FC<GameScreenProps> = ({ user, room, setRoom }) => {
               <p className="text-blue-200 font-bold relative z-10 mt-1 text-sm sm:text-base min-w-0 truncate">Theme: {room.theme} | Word: {displayWord}</p>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3 overflow-y-auto flex-1 min-h-0 pr-2 custom-scrollbar">
+            <div className="flex-1 min-h-0 overflow-y-auto pr-2 custom-scrollbar mb-3 flex flex-col items-center">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 w-full max-w-3xl">
               {playersForReveal.map(p => {
                 const isMe = p.id === user.id;
                 const isPicker = p.id === room.themePickerId;
@@ -624,9 +639,9 @@ const GameScreen: React.FC<GameScreenProps> = ({ user, room, setRoom }) => {
                         {isPicker && <span className="ml-2 text-xs bg-yellow-600 px-2 py-1 rounded">PICKER</span>}
                       </div>
                       {isPicker ? (
-                        <div className="text-yellow-400 font-mono text-sm mt-1 truncate">Picked the word</div>
+                        <div className="text-yellow-400 font-mono text-sm mt-1">Picked the word</div>
                       ) : (
-                        <div className="text-green-400 font-mono text-lg mt-1 truncate bg-black/30 px-2 py-1 rounded">
+                        <div className="text-green-400 font-mono mt-1 break-words bg-black/30 px-2 py-1 rounded min-w-0 text-base leading-tight" style={{ fontSize: 'clamp(0.75rem, 2.5vw, 1.125rem)' }}>
                           {association ? `"${association}"` : '""'}
                         </div>
                       )}
@@ -644,6 +659,7 @@ const GameScreen: React.FC<GameScreenProps> = ({ user, room, setRoom }) => {
                   </div>
                 );
               })}
+              </div>
             </div>
 
             <div className="flex justify-center items-center bg-gray-700 p-4 rounded-xl border-4 border-gray-600 shrink-0">
@@ -677,9 +693,9 @@ const GameScreen: React.FC<GameScreenProps> = ({ user, room, setRoom }) => {
     const hasVoted = !!room.votes[user.id];
     const isDead = !room.players.find(p => p.id === user.id)?.isAlive;
     const isImpostor = room.impostorIds.includes(user.id);
-    const displayWord = isImpostor && room.word 
-      ? `${room.word.charAt(0)}...${room.word.charAt(room.word.length - 1)} (${room.word.length} letters)` 
-      : room.word;
+    const displayWord = room.word ?? '';
+    // Only alive players: spectators don't appear in the list (they still see chat and "You are dead")
+    const playersToShow = alivePlayers;
 
     return (
       <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="w-full max-w-6xl">
@@ -702,21 +718,23 @@ const GameScreen: React.FC<GameScreenProps> = ({ user, room, setRoom }) => {
               <p className="text-blue-200 font-bold relative z-10 mt-1 text-sm sm:text-base min-w-0 truncate">Theme: {room.theme} | Word: {displayWord}</p>
             </div>
             
-            {/* Players Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4 overflow-y-auto flex-1 pr-2 custom-scrollbar">
-              {alivePlayers.map(p => {
+            {/* Players Grid — only alive players (spectators don't appear). Cards don't stretch to full width. */}
+            <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar mb-4 flex flex-col items-center">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 w-full max-w-3xl">
+              {playersToShow.map(p => {
                 const isMe = p.id === user.id;
                 const isPicker = p.id === room.themePickerId;
                 const association = room.associations[p.id];
                 const isSelected = votedId === p.id;
+                const canSelect = !hasVoted && !isMe && !isPicker && !isDead;
                 
                 return (
                   <div 
                     key={p.id} 
-                    onClick={() => !hasVoted && !isMe && !isPicker && !isDead && setVotedId(p.id)}
+                    onClick={() => canSelect && setVotedId(p.id)}
                     className={`
                       flex items-center p-3 rounded-xl border-4 transition-all
-                      ${isMe || isPicker || isDead ? 'opacity-70 cursor-not-allowed bg-gray-700 border-gray-600' : 'cursor-pointer hover:bg-gray-700'}
+                      ${!canSelect ? 'opacity-70 cursor-not-allowed bg-gray-700 border-gray-600' : 'cursor-pointer hover:bg-gray-700'}
                       ${isSelected ? 'bg-red-900 border-red-500' : 'bg-gray-800 border-gray-600'}
                     `}
                   >
@@ -725,14 +743,15 @@ const GameScreen: React.FC<GameScreenProps> = ({ user, room, setRoom }) => {
                     </div>
                     
                     <div className="flex-1 min-w-0">
-                      <div className="font-bold text-white truncate flex items-center">
-                        {p.name} {isMe && <span className="ml-2 text-xs bg-blue-600 px-2 py-1 rounded">YOU</span>}
-                        {isPicker && <span className="ml-2 text-xs bg-yellow-600 px-2 py-1 rounded">PICKER</span>}
+                      <div className="font-bold text-white truncate flex items-center flex-wrap gap-1">
+                        {p.name}
+                        {isMe && <span className="text-xs bg-blue-600 px-2 py-0.5 rounded">YOU</span>}
+                        {isPicker && <span className="text-xs bg-yellow-600 px-2 py-0.5 rounded">PICKER</span>}
                       </div>
                       {isPicker ? (
-                        <div className="text-yellow-400 font-mono text-sm mt-1 truncate">Picked the word</div>
+                        <div className="text-yellow-400 font-mono text-sm mt-1">Picked the word</div>
                       ) : (
-                        <div className="text-green-400 font-mono text-lg mt-1 truncate bg-black/30 px-2 py-1 rounded">
+                        <div className="text-green-400 font-mono mt-1 break-words bg-black/30 px-2 py-1 rounded min-w-0 text-base leading-tight" style={{ fontSize: 'clamp(0.75rem, 2.5vw, 1.125rem)' }}>
                           {association ? `"${association}"` : '""'}
                         </div>
                       )}
@@ -746,6 +765,7 @@ const GameScreen: React.FC<GameScreenProps> = ({ user, room, setRoom }) => {
                   </div>
                 );
               })}
+              </div>
             </div>
             
             {/* Actions */}
@@ -853,17 +873,19 @@ const GameScreen: React.FC<GameScreenProps> = ({ user, room, setRoom }) => {
               {room.winner === 'CREWMATES' ? 'CREWMATES WIN' : 'IMPOSTORS WIN'}
             </h1>
             
-            <div className="bg-gray-800 border-4 border-gray-600 rounded-xl p-6 mb-8 text-left">
-              <h3 className="text-xl font-bold mb-4 text-white border-b border-gray-600 pb-2">The Impostors were:</h3>
-              <div className="flex gap-4 flex-wrap">
-                {room.players.filter(p => room.impostorIds.includes(p.id)).map(imp => (
-                  <div key={imp.id} className="flex items-center bg-gray-700 px-4 py-2 rounded-lg border border-gray-500">
-                    <div className="w-6 h-8 rounded-t-full rounded-b-sm border border-black mr-3" style={{ backgroundColor: imp.color }}></div>
-                    <span className="font-bold text-red-400">{imp.name}</span>
-                  </div>
-                ))}
+            {(room.impostorIds?.length ?? 0) > 1 && (
+              <div className="bg-gray-800 border-4 border-gray-600 rounded-xl p-6 mb-8 text-left">
+                <h3 className="text-xl font-bold mb-4 text-white border-b border-gray-600 pb-2">The Impostors were:</h3>
+                <div className="flex gap-4 flex-wrap">
+                  {room.players.filter(p => room.impostorIds.includes(p.id)).map(imp => (
+                    <div key={imp.id} className="flex items-center bg-gray-700 px-4 py-2 rounded-lg border border-gray-500">
+                      <div className="w-6 h-8 rounded-t-full rounded-b-sm border border-black mr-3" style={{ backgroundColor: imp.color }}></div>
+                      <span className="font-bold text-red-400">{imp.name}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
             
             {user.isHost && (
               <AmongUsButton variant="primary" onClick={async () => {

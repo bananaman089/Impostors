@@ -184,29 +184,13 @@ try {
                 $pdo->prepare("UPDATE players SET is_alive = 1, role = 'civilian' WHERE room_id = ?")->execute([$room['id']]);
                 $pdo->prepare("UPDATE rooms SET status = 'LOBBY', theme_picker_id = NULL, category = NULL, current_word = NULL, associations = NULL, votes = NULL, ejected_player_id = NULL, winner = NULL, phase_ends_at = NULL WHERE id = ?")->execute([$room['id']]);
             } else {
-                $settings = json_decode($room['settings'], true) ?: [];
-                $stmt = $pdo->prepare("SELECT id FROM players WHERE room_id = ? AND is_alive = 1 AND role = 'civilian'");
-                $stmt->execute([$room['id']]);
-                $aliveCrew = $stmt->fetchAll(PDO::FETCH_COLUMN);
-                $forceHostPicker = !empty($settings['forceHostPicker']);
-                $hostId = $room['host_id'];
-                $themePickerId = null;
-                if ($forceHostPicker) {
-                    $stmt = $pdo->prepare("SELECT id FROM players WHERE id = ? AND is_alive = 1");
-                    $stmt->execute([$hostId]);
-                    if ($stmt->fetch() && in_array($hostId, $aliveCrew)) {
-                        $themePickerId = $hostId;
-                    }
+                // Mark ejected player as dead only when leaving RESULT (so they stayed visible on Vote results screen)
+                $ejectedId = $room['ejected_player_id'];
+                if ($ejectedId) {
+                    $pdo->prepare("UPDATE players SET is_alive = 0 WHERE id = ?")->execute([$ejectedId]);
                 }
-                if (!$themePickerId && count($aliveCrew) > 0) {
-                    $themePickerId = $aliveCrew[array_rand($aliveCrew)];
-                }
-                if (!$themePickerId) {
-                    $stmt = $pdo->prepare("SELECT id FROM players WHERE room_id = ? AND is_alive = 1");
-                    $stmt->execute([$room['id']]);
-                    $alive = $stmt->fetchAll(PDO::FETCH_COLUMN);
-                    $themePickerId = $alive[array_rand($alive)] ?? $hostId;
-                }
+                // One theme/word picker for the whole game; picker cannot be voted out so always keep same one
+                $themePickerId = $room['theme_picker_id'];
                 $pdo->prepare("DELETE FROM messages WHERE room_id = ?")->execute([$room['id']]);
                 $pdo->prepare("UPDATE rooms SET status = 'THEME_SELECTION', theme_picker_id = ?, category = NULL, current_word = NULL, associations = NULL, votes = NULL, ejected_player_id = NULL, winner = NULL, phase_ends_at = NULL WHERE id = ?")->execute([$themePickerId, $room['id']]);
             }
