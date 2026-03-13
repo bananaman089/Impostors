@@ -2,19 +2,55 @@
 <img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
 </div>
 
-# Run and deploy your AI Studio app
 
-This contains everything you need to run your app locally.
+Game Overview
 
-View your app in AI Studio: https://ai.studio/apps/f51192c6-2add-4909-9749-f6da38d96456
+In this game, everyone is given a secret word. However, one player (the Impostor) receives a different, related word or is simply told they are the Impostor.
 
-## Run Locally
+    The Clue Phase: Every player gives a one-word clue about their secret word.
 
-**Prerequisites:**  Node.js
+    The Strategy:
+
+        Crewmates must give clues that are clear enough to prove they know the word, but vague enough so the Impostor doesn't figure it out.
+
+        The Impostor must listen to others and give a clue that makes them sound like they belong.
+
+    The Vote: After the rounds, players vote on who they think the Impostor is.
+
+ Winning Conditions
+
+    Crewmates Win: If they successfully identify and vote out the Impostor.
+
+    The Impostor Wins:
+
+        If they are not voted out.
 
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+https://github.com/user-attachments/assets/c38a3f7e-3a80-407b-933a-3cec60ead208
+
+
+
+https://github.com/user-attachments/assets/95f81056-ac04-483f-b4b5-ccb01b3d6692
+
+
+        Last Chance: If they are caught but successfully guess the Citizens' secret word.
+
+ Features (Digital Implementation)
+
+    Role Distribution: Automatically assigns words and roles to all players.
+
+    Turn Management: Tracks whose turn it is to provide a clue.
+
+    Voting System: A built-in interface for players to cast their votes.
+
+    Word Database: A curated list of similar word pairs (e.g., "Mountain" vs. "Hill") to keep the game challenging.
+
+    Responsive UI: Designed to be played easily on [mobile/desktop/web].
+
+ Built With
+
+    Language: Typescript , PHP ,CSS
+
+    Framework: Vite , React
+
+    Networking/Database: MYSQL
