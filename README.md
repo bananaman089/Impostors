@@ -19,14 +19,16 @@ In this game, everyone is given a secret word. However, one player (the Impostor
 
  Winning Conditions
 
-    Crewmates Win: If they successfully identify and vote out the Impostor.
+    Crewmates Win: If they successfully identify and vote out the Impostor.![Uploading lv_0_20260313091536.gif…]()
+![lv_0_20260313091536](https://github.com/user-attachments/assets/0a7d4e14-23d8-4d77-975c-157031d26ab3)
+
 
     The Impostor Wins:
 
         If they are not voted out.
 
 
-https://github.com/user-attachments/assets/c38a3f7e-3a80-407b-933a-3cec60ead208
+
 
 
 
