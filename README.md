@@ -1,8 +1,3 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
-
-
 Game Overview
 
 In this game, everyone is given a secret word. However, one player (the Impostor) receives a different, related word or is simply told they are the Impostor.
