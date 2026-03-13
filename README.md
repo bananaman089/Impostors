@@ -30,9 +30,6 @@ https://github.com/user-attachments/assets/c38a3f7e-3a80-407b-933a-3cec60ead208
 
 
 
-https://github.com/user-attachments/assets/95f81056-ac04-483f-b4b5-ccb01b3d6692
-
-
         Last Chance: If they are caught but successfully guess the Citizens' secret word.
 
  Features (Digital Implementation)
